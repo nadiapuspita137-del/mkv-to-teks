@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>MKV ke Teks</title>
+  <meta name="description" content="Ekstrak subtitle ASS/SRT dari banyak file MKV langsung di browser.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="badge">100% lokal di browser</div>
+      <h1>MKV <span>→</span> Teks</h1>
+      <p class="lead">Ambil subtitle dari banyak file MKV sekaligus. Video tidak diunggah ke server.</p>
+    </header>
+
+    <section id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Pilih file MKV">
+      <input id="fileInput" type="file" accept=".mkv,video/x-matroska" multiple hidden>
+      <div class="drop-icon">＋</div>
+      <strong>Taruh file MKV di sini</strong>
+      <span>atau ketuk untuk memilih banyak file</span>
+      <small>ASS / SSA / SRT / WebVTT yang tertanam di MKV</small>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <div class="toolbar">
+        <div><strong id="countLabel">0 file</strong><span id="sizeLabel"></span></div>
+        <div class="toolbar-actions">
+          <button id="addBtn" class="ghost">+ Tambah</button>
+          <button id="clearBtn" class="ghost danger">Bersihkan</button>
+        </div>
+      </div>
+
+      <div class="settings">
+        <label>Format hasil
+          <select id="formatSelect">
+            <option value="srt">SRT (mudah dibaca AI)</option>
+            <option value="ass">ASS (pertahankan styling)</option>
+            <option value="txt">TXT (dialog saja)</option>
+          </select>
+        </label>
+        <label>Track subtitle
+          <select id="trackSelect">
+            <option value="0">Subtitle pertama</option>
+            <option value="1">Subtitle kedua</option>
+            <option value="2">Subtitle ketiga</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="fileList" class="file-list"></div>
+
+      <div class="actionbar">
+        <div id="engineStatus" class="engine-status">Mesin belum dimuat</div>
+        <button id="extractBtn" class="primary">Ekstrak Semua</button>
+      </div>
+    </section>
+
+    <section class="info-grid">
+      <article><b>Privat</b><p>File diproses di perangkat. Tidak ada upload video.</p></article>
+      <article><b>Batch</b><p>File diproses satu per satu agar penggunaan memori lebih terkendali.</p></article>
+      <article><b>Untuk anime</b><p>Cocok untuk MKV dengan subtitle teks embedded seperti ASS.</p></article>
+    </section>
+
+    <details class="notes"><summary>Batasan versi ini</summary><p>Subtitle gambar seperti PGS tidak bisa diubah menjadi teks tanpa OCR. File MKV sangat besar juga dapat melewati batas memori browser, terutama di perangkat mobile.</p></details>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
