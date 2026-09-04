@@ -1,0 +1,84 @@
+import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js';
+import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js';
+
+const $=s=>document.querySelector(s);
+const input=$('#fileInput'),drop=$('#dropzone'),workspace=$('#workspace'),list=$('#fileList');
+const extractBtn=$('#extractBtn'),engineStatus=$('#engineStatus');
+let files=[],ffmpeg=null,loaded=false,busy=false;
+
+const humanSize=n=>{const u=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${u[i]}`};
+const baseName=n=>n.replace(/\.mkv$/i,'');
+const safeName=n=>n.replace(/[^a-zA-Z0-9._-]+/g,'_').slice(-100);
+
+function render(){
+  workspace.classList.toggle('hidden',!files.length);
+  $('#countLabel').textContent=`${files.length} file`;
+  $('#sizeLabel').textContent=files.length?`${humanSize(files.reduce((a,f)=>a+f.size,0))} total`:'';
+  list.innerHTML='';
+  files.forEach((f,i)=>{
+    const row=document.createElement('div');row.className='file-row';
+    row.innerHTML=`<div><div class="file-name"></div><div class="meta">${humanSize(f.size)}</div></div><div class="status" id="status-${i}">Menunggu</div>`;
+    row.querySelector('.file-name').textContent=f.name;list.append(row);
+  });
+}
+function add(newFiles){
+  const mkv=[...newFiles].filter(f=>f.name.toLowerCase().endsWith('.mkv'));
+  const known=new Set(files.map(f=>`${f.name}:${f.size}:${f.lastModified}`));
+  files.push(...mkv.filter(f=>!known.has(`${f.name}:${f.size}:${f.lastModified}`)));render();
+}
+input.addEventListener('change',e=>{add(e.target.files);input.value=''});
+drop.addEventListener('click',()=>input.click());
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click()}});
+['dragenter','dragover'].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add('drag')}));
+['dragleave','drop'].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.remove('drag')}));
+drop.addEventListener('drop',e=>add(e.dataTransfer.files));
+$('#addBtn').onclick=()=>input.click();
+$('#clearBtn').onclick=()=>{if(!busy){files=[];render()}};
+
+async function loadEngine(){
+  if(loaded)return;
+  engineStatus.textContent='Memuat FFmpeg…';
+  ffmpeg=new FFmpeg();
+  const base='https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+  await ffmpeg.load({coreURL:await toBlobURL(`${base}/ffmpeg-core.js`,'text/javascript'),wasmURL:await toBlobURL(`${base}/ffmpeg-core.wasm`,'application/wasm')});
+  loaded=true;engineStatus.textContent='FFmpeg siap';
+}
+function download(bytes,name,type='application/octet-stream'){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type}));a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function assToSrt(text){
+  const lines=text.replace(/\r/g,'').split('\n'),out=[];let n=1;
+  for(const line of lines){if(!line.startsWith('Dialogue:'))continue;const p=line.slice(9).split(',');if(p.length<10)continue;
+    const start=p[1].trim(),end=p[2].trim(),body=p.slice(9).join(',').replace(/\{[^}]*\}/g,'').replace(/\\N|\\n/g,'\n').replace(/\\h/g,' ').trim();
+    const time=t=>{const m=t.match(/(\d+):(\d+):(\d+)[.](\d+)/);if(!m)return t;return `${String(m[1]).padStart(2,'0')}:${m[2]}:${m[3]},${String(m[4]).padEnd(3,'0').slice(0,3)}`};
+    out.push(`${n++}\n${time(start)} --> ${time(end)}\n${body}\n`);
+  }return out.join('\n');
+}
+function assToTxt(text){return text.replace(/\r/g,'').split('\n').filter(x=>x.startsWith('Dialogue:')).map(x=>{const p=x.slice(9).split(',');return p.slice(9).join(',').replace(/\{[^}]*\}/g,'').replace(/\\N|\\n/g,'\n').replace(/\\h/g,' ').trim()}).filter(Boolean).join('\n');}
+
+async function processOne(file,index){
+  const status=$(`#status-${index}`),inputName=`in_${index}_${safeName(file.name)}`;
+  const track=Number($('#trackSelect').value),format=$('#formatSelect').value;
+  status.textContent='Membaca MKV…';
+  try{
+    await ffmpeg.writeFile(inputName,await fetchFile(file));
+    // Extract selected subtitle stream as ASS first. This handles ASS/SSA and text subtitle streams FFmpeg can convert.
+    const outAss=`sub_${index}.ass`;
+    status.textContent='Ekstrak subtitle…';
+    await ffmpeg.exec(['-i',inputName,'-map',`0:s:${track}`,'-c:s','ass',outAss]);
+    const assBytes=await ffmpeg.readFile(outAss);const assText=new TextDecoder().decode(assBytes);
+    let output,name,mime='text/plain;charset=utf-8';
+    if(format==='ass'){output=assBytes;name=`${baseName(file.name)}.ass`}
+    else if(format==='srt'){output=new TextEncoder().encode(assToSrt(assText));name=`${baseName(file.name)}.srt`}
+    else{output=new TextEncoder().encode(assToTxt(assText));name=`${baseName(file.name)}.txt`}
+    download(output,name,mime);status.textContent='✓ Selesai';status.className='status ok';
+    await ffmpeg.deleteFile(outAss);await ffmpeg.deleteFile(inputName);
+  }catch(err){console.error(err);status.textContent='Gagal / track tidak ada';status.className='status err';try{await ffmpeg.deleteFile(inputName)}catch{}}
+}
+extractBtn.onclick=async()=>{
+  if(!files.length||busy)return;busy=true;extractBtn.disabled=true;$('#clearBtn').disabled=true;
+  try{await loadEngine();for(let i=0;i<files.length;i++)await processOne(files[i],i);engineStatus.textContent='Semua proses selesai'}
+  catch(e){console.error(e);engineStatus.textContent='Gagal memuat mesin. Cek koneksi/browser.'}
+  finally{busy=false;extractBtn.disabled=false;$('#clearBtn').disabled=false}
+};
+render();
